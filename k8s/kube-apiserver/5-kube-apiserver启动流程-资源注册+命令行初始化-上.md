@@ -1,3 +1,18 @@
+Table of Contents
+=================
+
+  * [1. 资源注册](#1-资源注册)
+  * [2. Cobra命令行参数解析](#2-cobra命令行参数解析)
+     * [2.1.  入口函数 main-&gt;NewAPIServerCommand](#21--入口函数-main-newapiservercommand)
+     * [2.2 options.NewServerRunOptions](#22-optionsnewserverrunoptions)
+     * [2.3 cmd.Flags()](#23-cmdflags)
+     * [2.3.1 C.Name](#231-cname)
+     * [2.3.2 NewFlagSet](#232-newflagset)
+     * [2.4 s.Flags()](#24-sflags)
+     * [2.5 command.Execute() 真正的参数解析](#25-commandexecute-真正的参数解析)
+     * [2.6 总结](#26-总结)
+  * [3. 总结](#3-总结)
+
 **本章重点：**
 
 （1）kube-apiserver启动过程中，前两个步骤：资源注册和命令行解析

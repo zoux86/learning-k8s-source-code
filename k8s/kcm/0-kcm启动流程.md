@@ -1,3 +1,21 @@
+Table of Contents
+=================
+
+* [1. 定义-main](#1-定义-main)
+     * [1.1 NewKubeControllerManagerOptions](#11-newkubecontrollermanageroptions)
+     * [1.2 s.config  实例化一个kubecontrollerconfig.Config](#12-sconfig--实例化一个kubecontrollerconfigconfig)
+        * [1.2.1 s.applyTo](#121-sapplyto)
+        * [1.2.2 结构体定义](#122-结构体定义)
+     * [1.3 Run](#13-run)
+     * [1.4 run函数](#14-run函数)
+     * [1.5 StartControllers](#15-startcontrollers)
+     * [1.6 总结](#16-总结)
+        * [1.6.1 整体流程](#161-整体流程)
+        * [1.6.2 一些思考](#162-一些思考)
+  * [2. 附录](#2-附录)
+     * [2.1 cobra实践](#21-cobra实践)
+     * [2.2 k8s中的选举机制](#22-k8s中的选举机制)
+
 ### 1. 定义-main
 
 cmd\kube-controller-manager\controller-manager.go

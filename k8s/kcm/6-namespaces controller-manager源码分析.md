@@ -1,3 +1,13 @@
+Table of Contents
+=================
+
+  * [1. startNamespaceController](#1-startnamespacecontroller)
+  * [2. NewNamespaceController](#2-newnamespacecontroller)
+  * [3. Run](#3-run)
+     * [3.1 syncNamespaceFromKey](#31-syncnamespacefromkey)
+     * [3.2. deleteAllContent](#32-deleteallcontent)
+  * [4 总结](#4-总结)
+
 和其他kcm控制器组件一样，nsController还是在NewControllerInitializers定义然后启动。
 
 ### 1. startNamespaceController

@@ -1,3 +1,15 @@
+Table of Contents
+=================
+
+  * [1. custom-metrics-apiserver简介](#1-custom-metrics-apiserver简介)
+  * [2. 定制自己的metric server](#2-定制自己的metric-server)
+     * [2.1 代码部署和编译](#21-代码部署和编译)
+     * [2.2 创建 Sv and APIService](#22-创建-sv-and-apiservice)
+     * [2.3 system:anonymous授权](#23-systemanonymous授权)
+  * [3. 创建hpa验证是否成功](#3-创建hpa验证是否成功)
+  * [4. 追踪整个过程](#4-追踪整个过程)
+  * [5. 总结](#5-总结)
+
 **本章重点：** 如何基于 custom-metrics-apiserver 项目，打造自己的 metric server
 
 ### 1. custom-metrics-apiserver简介

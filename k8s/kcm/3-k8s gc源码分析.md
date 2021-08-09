@@ -1,3 +1,23 @@
+Table of Contents
+=================
+
+  * [1. K8s 的垃圾回收策略](#1-k8s-的垃圾回收策略)
+  * [2 gc 源码分析](#2-gc-源码分析)
+     * [2.1 初始化 garbageCollector 对象](#21-初始化-garbagecollector-对象)
+        * [2.1.1 garbageCollector包含的结构体对象](#211-garbagecollector包含的结构体对象)
+        * [2.1.2 NewGarbageCollector](#212-newgarbagecollector)
+     * [2.2 启动garbageCollector](#22-启动garbagecollector)
+        * [2.2.1 启动dependencyGraphBuilder](#221-启动dependencygraphbuilder)
+        * [2.2.2 runAttemptToDeleteWorker](#222-runattempttodeleteworker)
+        * [2.2.3 runAttemptToOrphanWorker](#223-runattempttoorphanworker)
+        * [2.2.4 总结](#224-总结)
+     * [2.3  runProcessGraphChanges](#23--runprocessgraphchanges)
+     * [2.4 processTransitions函数的处理逻辑](#24-processtransitions函数的处理逻辑)
+     * [2.5 runAttemptToOrphanWorker](#25-runattempttoorphanworker)
+     * [2.6 attemptToDeleteWorker](#26-attempttodeleteworker)
+     * [2.7 uidToNode到底是什么](#27-uidtonode到底是什么)
+  * [3.总结](#3总结)
+
 ### 1. K8s 的垃圾回收策略
 
 k8s目前支持三种回收策略：

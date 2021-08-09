@@ -1,3 +1,27 @@
+Table of Contents
+=================
+
+  * [1. kube-apiserver代码逻辑](#1-kube-apiserver代码逻辑)
+     * [(1) RunE](#1-rune)
+     * [1.1 completedOptions, err := Complete(s)](#11-completedoptions-err--completes)
+     * [1.2 validate](#12-validate)
+     * [1.3 Run](#13-run)
+        * [1.3.1 CreateServerChain](#131-createserverchain)
+           * [1.3.1.1 函数输入输出](#1311-函数输入输出)
+           * [1.3.1.2 CreateServerChain 主体](#1312-createserverchain-主体)
+           * [1.3.1.3  CreateNodeDialer](#1313--createnodedialer)
+        * [1.3.2 PrepareRun](#132-preparerun)
+        * [1.3.3 Run](#133-run)
+           * [1.3.3.1 NonBlockingRun](#1331-nonblockingrun)
+     * [(2) 总结](#2-总结)
+  * [2. 创建APIServer通用配置](#2-创建apiserver通用配置)
+     * [2.1  genericConfig实例化](#21--genericconfig实例化)
+     * [2.2 OpenAPI/Swagger配置](#22-openapiswagger配置)
+     * [2.3 StorageFactory存储（Etcd）配置](#23-storagefactory存储etcd配置)
+     * [2.4 Authentication认证配置](#24-authentication认证配置)
+     * [2.5 Authorization授权配置](#25-authorization授权配置)
+     * [2.6 Admission准入控制器配置](#26-admission准入控制器配置)
+
 **本章重点：**
 
 （1）kube-apiserver启动过程中，第三个步骤：资源注册和命令行解析。然后定义通用配置。配置如下：

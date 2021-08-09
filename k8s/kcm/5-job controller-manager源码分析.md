@@ -1,3 +1,23 @@
+Table of Contents
+=================
+
+  * [1.  job简介](#1--job简介)
+  * [2. job controller源码分析-初始化](#2-job-controller源码分析-初始化)
+     * [2.1 startJobController](#21-startjobcontroller)
+     * [2.2 NewJobController](#22-newjobcontroller)
+     * [2.3 对Pod的监听事件](#23-对pod的监听事件)
+        * [2.3.1 job的expectations机制](#231-job的expectations机制)
+        * [2.3.2 addPod](#232-addpod)
+        * [2.3.3 updatePod](#233-updatepod)
+        * [2.3.4 deletePod](#234-deletepod)
+        * [2.3.5 总结](#235-总结)
+  * [3. 如何处理队列中的job](#3-如何处理队列中的job)
+     * [3.1 sycnjob](#31-sycnjob)
+     * [3.2 判断job是否完成的标准：  completed,  failed，c.Status == v1.ConditionTrue](#32-判断job是否完成的标准--completed--failedcstatus--v1conditiontrue)
+     * [3.3 如何获得该job对应的pods](#33-如何获得该job对应的pods)
+     * [3.4  jm.manageJob](#34--jmmanagejob)
+  * [4.总结](#4总结)
+
 ### 1.  job简介
 
 job 在 kubernetes 中主要用来处理离线任务，job 直接管理 pod，可以创建一个或多个 pod 并会确保指定数量的 pod 运行完成。

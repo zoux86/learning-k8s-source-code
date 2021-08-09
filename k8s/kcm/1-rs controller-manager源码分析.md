@@ -1,3 +1,23 @@
+Table of Contents
+=================
+
+  * [1. startReplicaSetController](#1-startreplicasetcontroller)
+     * [1.1 rs中的expectations机制](#11-rs中的expectations机制)
+  * [2. Pod，rs变化时对应的处理逻辑](#2-podrs变化时对应的处理逻辑)
+     * [2.1 addPod](#21-addpod)
+     * [2.2 updatePod](#22-updatepod)
+     * [2.3 deletePod](#23-deletepod)
+     * [2.4 addRS](#24-addrs)
+     * [2.5 updateRS](#25-updaters)
+     * [2.6 deleteRS](#26-deleters)
+  * [3. rs的处理逻辑](#3-rs的处理逻辑)
+     * [3.1 过滤pod](#31-过滤pod)
+     * [3.2 manageReplicas](#32-managereplicas)
+        * [3.2.1 创建pod](#321-创建pod)
+        * [3.2.2 删除pod](#322-删除pod)
+     * [3.3 calculateStatus](#33-calculatestatus)
+  * [4 总结](#4-总结)
+
 ### 1. startReplicaSetController
 
 和deployController一样，kcm中定义了startReplicaSetController，startReplicaSetController和所有的控制器一样，先New一个对象，然后调用run函数。

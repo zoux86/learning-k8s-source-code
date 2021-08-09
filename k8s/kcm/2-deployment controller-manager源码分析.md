@@ -1,3 +1,33 @@
+Table of Contents
+=================
+
+  * [1. deploy基础概念](#1-deploy基础概念)
+     * [1.1. metadata.generation &amp; status.observedGeneration](#11-metadatageneration--statusobservedgeneration)
+     * [1.2. metadata.resourceVersion](#12-metadataresourceversion)
+     * [1.3 status](#13-status)
+  * [2. startDeploymentController](#2-startdeploymentcontroller)
+  * [3. NewDeploymentController](#3-newdeploymentcontroller)
+  * [4. 对deploy, rs, pod的处理](#4-对deploy-rs-pod的处理)
+     * [4.1 add,update, del deploy](#41-addupdate-del-deploy)
+     * [4.2 add,update,del ReplicaSet](#42-addupdatedel-replicaset)
+     * [4.3 del pod](#43-del-pod)
+     * [4.4 getDeploymentForPod](#44-getdeploymentforpod)
+     * [4.5 总结](#45-总结)
+  * [5. syncDeployment](#5-syncdeployment)
+     * [5.1 删除deploy](#51-删除deploy)
+        * [5.1.1 getAllReplicaSetsAndSyncRevision](#511-getallreplicasetsandsyncrevision)
+        * [5.1.2 syncDeploymentStatus](#512-syncdeploymentstatus)
+        * [5.1.3 总结](#513-总结)
+     * [5.2 pause操作](#52-pause操作)
+     * [5.3 Rollback操作](#53-rollback操作)
+     * [5.4 scale操作](#54-scale操作)
+        * [5.4.1 获得最新的一个activeRs](#541-获得最新的一个activers)
+        * [5.4.2 如果newRS已经是期望状态，将所有的oldRS缩到0](#542-如果newrs已经是期望状态将所有的oldrs缩到0)
+     * [5.5 recreate更新](#55-recreate更新)
+     * [5.6 rolloutRolling更新](#56-rolloutrolling更新)
+        * [5.6.1 如果是scaledUp（针对news），返回 syncRolloutStatus](#561-如果是scaledup针对news返回-syncrolloutstatus)
+     * [5.7 scaleReplicaSetAndRecordEvent](#57-scalereplicasetandrecordevent)
+
 ### 1. deploy基础概念
 
 ```

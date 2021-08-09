@@ -1,3 +1,25 @@
+Table of Contents
+=================
+
+  * [1. 创建APIExtensionsServer](#1-创建apiextensionsserver)
+     * [1.1  创建GenericAPIServer](#11--创建genericapiserver)
+     * [1.2  实例化CustomResourceDefinitions](#12--实例化customresourcedefinitions)
+     * [1.3 实例化APIGroupInfo](#13-实例化apigroupinfo)
+     * [1.4 InstallAPIGroup注册APIGroup](#14-installapigroup注册apigroup)
+     * [1.5 启动crdController](#15-启动crdcontroller)
+  * [2. 创建KubeAPIServer](#2-创建kubeapiserver)
+     * [2.1 创建GenericAPIServer](#21-创建genericapiserver)
+     * [2.2 实例化Master](#22-实例化master)
+     * [2.3 InstallLegacyAPI注册/api资源](#23-installlegacyapi注册api资源)
+     * [2.4 InstallAPIs注册/apis资源](#24-installapis注册apis资源)
+     * [2.5 路由注册总结](#25-路由注册总结)
+  * [3. 创建AggregatorServer](#3-创建aggregatorserver)
+  * [4. 创建GenericAPIServer](#4-创建genericapiserver)
+  * [5. 启动http服务](#5-启动http服务)
+  * [6. 启动https服务](#6-启动https服务)
+  * [7 总结](#7-总结)
+  * [8. 参考链接](#8-参考链接)
+
 **本章重点：**
 
 （1）kube-apiserver启动过程中，剩下的六个步骤：
@@ -1424,7 +1446,122 @@ type Store struct {
 ```
 
 最终完成以api开头的所有资源的RESTStorage操作。
- 创建完之后，则开始进行路由的安装，执行`InstallLegacyAPIGroup`方法，主要调用链为`InstallLegacyAPIGroup-->installAPIResources-->InstallREST-->Install-->registerResourceHandlers`，最终核心的路由构造在`registerResourceHandlers`方法内。这是一个非常复杂的方法，整个方法的代码在700行左右。方法的主要功能是通过上一步骤构造的RESTStorage判断该资源可以执行哪些操作（如create、update等），将其对应的操作存入到action，每一个action对应一个标准的rest操作，如create对应的action操作为POST、update对应的action操作为PUT。最终根据actions数组依次遍历，对每一个操作添加一个handler方法，注册到route中去，route注册到webservice中去，完美匹配go-restful的设计模式。
+ 创建完之后，则开始进行路由的安装，执行`InstallLegacyAPIGroup`方法，主要调用链为`InstallLegacyAPIGroup-->installAPIResources-->InstallREST-->Install-->registerResourceHandlers`，最终核心的路由构造在`registerResourceHandlers`方法内。
+
+```
+vendor/k8s.io/apiserver/pkg/endpoints/installer.go
+
+func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storage, ws *restful.WebService) (*metav1.APIResource, error) {
+    
+　　　　...
+
+　　　　creater, isCreater := storage.(rest.Creater)
+　　　　namedCreater, isNamedCreater := storage.(rest.NamedCreater)
+　　　　lister, isLister := storage.(rest.Lister)
+　　　　getter, isGetter := storage.(rest.Getter)
+　　　　getterWithOptions, isGetterWithOptions := storage.(rest.GetterWithOptions)
+　　　　gracefulDeleter, isGracefulDeleter := storage.(rest.GracefulDeleter)
+　　　　collectionDeleter, isCollectionDeleter := storage.(rest.CollectionDeleter)
+　　　　updater, isUpdater := storage.(rest.Updater)
+　　　　patcher, isPatcher := storage.(rest.Patcher)
+　　　　watcher, isWatcher := storage.(rest.Watcher)
+　　　　connecter, isConnecter := storage.(rest.Connecter)
+　　　　storageMeta, isMetadata := storage.(rest.StorageMetadata)
+
+　　　　if !isMetadata {
+   　　　　　　storageMeta = defaultStorageMetadata{}
+　　　　}
+　　　　...
+
+
+　　　　// Handler for standard REST verbs (GET, PUT, POST and DELETE).
+　　　　// Add actions at the resource path: /api/apiVersion/resource
+　　　　actions = appendIf(actions, action{"LIST", resourcePath, resourceParams, namer, false}, isLister)
+　　　　actions = appendIf(actions, action{"POST", resourcePath, resourceParams, namer, false}, isCreater)
+　　　　actions = appendIf(actions, action{"DELETECOLLECTION", resourcePath, resourceParams, namer, false}, isCollectionDeleter)
+　　　　
+　　　　// Add actions at the item path: /api/apiVersion/resource/{name}
+　　　　actions = appendIf(actions, action{"GET", itemPath, nameParams, namer, false}, isGetter)
+　　　　if getSubpath {
+   　　　　　　actions = appendIf(actions, action{"GET", itemPath + "/{path:*}", proxyParams, namer, false}, isGetter)
+　　　　}
+　　　　actions = appendIf(actions, action{"PUT", itemPath, nameParams, namer, false}, isUpdater)
+　　　　actions = appendIf(actions, action{"PATCH", itemPath, nameParams, namer, false}, isPatcher)
+　　　　actions = appendIf(actions, action{"DELETE", itemPath, nameParams, namer, false}, isGracefulDeleter)
+
+　　　　actions = appendIf(actions, action{"CONNECT", itemPath, nameParams, namer, false}, isConnecter)
+　　　　actions = appendIf(actions, action{"CONNECT", itemPath + "/{path:*}", proxyParams, namer, false}, isConnecter && connectSubpath)
+
+　　　　...
+　　　　
+　　　　routes := []*restful.RouteBuilder{}
+
+　　　　case "GET": // Get a resource.
+　　　　　　　　var handler restful.RouteFunction
+　　　　　　　　if isGetterWithOptions {
+   　　　　　　　　　　handler = restfulGetResourceWithOptions(getterWithOptions, reqScope, isSubresource)
+　　　　　　　　} else {
+   　　　　　　　　　　handler = restfulGetResource(getter, exporter, reqScope)
+　　　　　　　　}
+
+　　　　　　　　if needOverride {
+   　　　　　　　　　　// need change the reported verb
+　　　　　　　　　　　　handler = metrics.InstrumentRouteFunc(verbOverrider.OverrideMetricsVerb(action.Verb), group, version, resource, subresource, requestScope, metrics.APIServerComponent, handler)
+　　　　　　　　} else {
+　　　　　　　　　　　　handler = metrics.InstrumentRouteFunc(action.Verb, group, version, resource, subresource, requestScope, metrics.APIServerComponent, handler)
+　　　　　　　　}
+
+　　　　　　　　if a.enableAPIResponseCompression {
+   　　　　　　　　　　handler = genericfilters.RestfulWithCompression(handler)
+　　　　　　　　}
+　　　　　　　　doc := "read the specified " + kind
+　　　　　　　　if isSubresource {
+   　　　　　　　　　　doc = "read " + subresource + " of the specified " + kind
+　　　　　　　　}
+　　　　　　　　route := ws.GET(action.Path).To(handler).Doc(doc).
+　　　　　　　　Param(ws.QueryParameter("pretty", "If 'true', then the output is pretty printed.")).
+　　　　　　　　Operation("read"+namespaced+kind+strings.Title(subresource)+operationSuffix).
+　　　　　　　　Produces(append(storageMeta.ProducesMIMETypes(action.Verb), mediaTypes...)...).
+　　　　　　　　Returns(http.StatusOK, "OK", producedObject).Writes(producedObject)
+　　　　　　　　...
+　　　　　　　　routes = append(routes, route)
+
+　　　　...
+
+　　　　
+　　　　for _, route := range routes {
+   　　　　　　route.Metadata(ROUTE_META_GVK, metav1.GroupVersionKind{
+      　　　　　　　　Group:   reqScope.Kind.Group,
+      　　　　　　　　Version: reqScope.Kind.Version,
+      　　　　　　　　Kind:    reqScope.Kind.Kind,
+   　　　　　　})
+   　　　　　　route.Metadata(ROUTE_META_ACTION, strings.ToLower(action.Verb))
+   　　　　　　ws.Route(route)
+　　　　}
+　　　　...
+　　　　return &apiResource, nil
+}
+```
+
+**registerResourceHandlers**处理逻辑如下：
+
+1.判断storage是否支持create、list、get等方法，并对所有支持的方法进行进一步的处理，如if !isMetadata这一块一样，内容过多不一一贴出；
+
+2.将所有支持的方法存入actions数组中；
+
+3.遍历actions数组，在一个switch语句中，为所有元素定义路由。如贴出的case "GET"这一块，首先创建并包装一个handler对象，然后调用WebService的一系列方法，创建一个route对象，将handler绑定到这个route上。后面还有case "PUT"、case "DELETE"等一系列case，不一一贴出。最后，将route加入routes数组中。
+
+4.遍历routes数组，将route加入WebService中。
+
+5.最后，返回一个APIResource结构体。
+
+这样，Install方法就通过调用registerResourceHandlers方法，完成了WebService与APIResource的绑定。
+
+至此，InstallLegacyAPI方法的逻辑就分析完了。总的来说，这个方法遵循了go-restful的设计模式，在/api路径下注册了WebService，并将WebService加入Container中。
+
+<br>
+
+这是一个非常复杂的方法，整个方法的代码在700行左右。方法的主要功能是通过上一步骤构造的RESTStorage判断该资源可以执行哪些操作（如create、update等），将其对应的操作存入到action，每一个action对应一个标准的rest操作，如create对应的action操作为POST、update对应的action操作为PUT。最终根据actions数组依次遍历，对每一个操作添加一个handler方法，注册到route中去，route注册到webservice中去，完美匹配go-restful的设计模式。
 
 <br>
 
