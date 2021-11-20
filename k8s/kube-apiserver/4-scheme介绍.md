@@ -1,20 +1,4 @@
-Table of Contents
-=================
-
-  * [1. schema简介-内存型的资源注册表](#1-schema简介-内存型的资源注册表)
-  * [2.schema数据结构](#2schema数据结构)
-     * [2.1 资源的注册](#21-资源的注册)
-        * [2.1.1 k8s中各种资源时如何注册到scheme中去的](#211-k8s中各种资源时如何注册到scheme中去的)
-     * [2.2 内部版本和外部版本的转换](#22-内部版本和外部版本的转换)
-        * [2.2.1 k8s转换函数是如何注册的](#221-k8s转换函数是如何注册的)
-  * [3.  Scheme代码展示](#3--scheme代码展示)
-  * [4. 总结](#4-总结)
-
-
-
-**本章重点：**
-
-schema是什么，有什么用。
+[toc]
 
 <br>
 
@@ -121,7 +105,7 @@ Scheme资源注册表通过Go语言的map结构实现映射关系，这些映射
 
 <br>
 
-##### 2.1.1 k8s中各种资源时如何注册到scheme中去的
+##### 2.1.1 k8s资源注册原理
 
 这里先用一个例子说明这种注册模式。下一节详细说一下k8s中时如何注册的
 
@@ -241,7 +225,201 @@ after add test1
 
 所以，可以看出来，通过go包的 init, import将 test1, test2自动注册到了，TestSchemeA这个全局的map中。
 
+##### 2.1.2 k8S资源注册过程
 
+(1) 初始化scheme资源注册表
+
+在legacyscheme包中，定义了scheme资源注册函数，codec编码器以及ParameterCodec参数解码器。它们被定义为全局变量，这些变量在kube-apiserver的任何地方都可以被调用。
+
+```
+pkg/api/legacyscheme/scheme.go
+var (
+	// Scheme is the default instance of runtime.Scheme to which types in the Kubernetes API are already registered.
+	// NOTE: If you are copying this file to start a new api group, STOP! Copy the
+	// extensions group instead. This Scheme is special and should appear ONLY in
+	// the api group, unless you really know what you're doing.
+	// TODO(lavalamp): make the above error impossible.
+	Scheme = runtime.NewScheme()
+
+	// Codecs provides access to encoding and decoding for the scheme
+	Codecs = serializer.NewCodecFactory(Scheme)
+
+	// ParameterCodec handles versioning of objects that are converted to query parameters.
+	ParameterCodec = runtime.NewParameterCodec(Scheme)
+)
+```
+
+（2）注册kubernetes所支持的资源
+
+Kube-apiserver启动的时候导入了master包。master包中的import_known_versions.go文件调用了所有资源的Install包。通过包的导入机制触发Init函数，从而完成了注册。
+
+```
+pkg/master/import_known_versions.go
+
+package master
+
+import (
+	// These imports are the API groups the API server will support.
+	_ "k8s.io/kubernetes/pkg/apis/admission/install"
+	_ "k8s.io/kubernetes/pkg/apis/admissionregistration/install"
+	_ "k8s.io/kubernetes/pkg/apis/apps/install"
+	_ "k8s.io/kubernetes/pkg/apis/auditregistration/install"
+	_ "k8s.io/kubernetes/pkg/apis/authentication/install"
+	_ "k8s.io/kubernetes/pkg/apis/authorization/install"
+	_ "k8s.io/kubernetes/pkg/apis/autoscaling/install"
+	_ "k8s.io/kubernetes/pkg/apis/batch/install"
+	_ "k8s.io/kubernetes/pkg/apis/certificates/install"
+	_ "k8s.io/kubernetes/pkg/apis/coordination/install"
+	_ "k8s.io/kubernetes/pkg/apis/core/install"
+	_ "k8s.io/kubernetes/pkg/apis/discovery/install"
+	_ "k8s.io/kubernetes/pkg/apis/events/install"
+	_ "k8s.io/kubernetes/pkg/apis/extensions/install"
+	_ "k8s.io/kubernetes/pkg/apis/flowcontrol/install"
+	_ "k8s.io/kubernetes/pkg/apis/imagepolicy/install"
+	_ "k8s.io/kubernetes/pkg/apis/networking/install"
+	_ "k8s.io/kubernetes/pkg/apis/node/install"
+	_ "k8s.io/kubernetes/pkg/apis/policy/install"
+	_ "k8s.io/kubernetes/pkg/apis/rbac/install"
+	_ "k8s.io/kubernetes/pkg/apis/scheduling/install"
+	_ "k8s.io/kubernetes/pkg/apis/settings/install"
+	_ "k8s.io/kubernetes/pkg/apis/storage/install"
+)
+```
+
+随便找一个install包, 可以发现这里引入了全局的legacyscheme.Scheme，然后调用了AddToScheme函数进行了注册
+
+```
+package install
+
+import (
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	"k8s.io/kubernetes/pkg/apis/core"
+	"k8s.io/kubernetes/pkg/apis/core/v1"
+)
+
+func init() {
+	Install(legacyscheme.Scheme)
+}
+
+// Install registers the API group and adds types to a scheme
+func Install(scheme *runtime.Scheme) {
+	utilruntime.Must(core.AddToScheme(scheme))
+	utilruntime.Must(v1.AddToScheme(scheme))
+	utilruntime.Must(scheme.SetVersionPriority(v1.SchemeGroupVersion))
+}
+
+
+pkg/apis/core/register.go
+var (
+	// SchemeBuilder object to register various known types
+	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
+
+	// AddToScheme represents a func that can be used to apply all the registered
+	// funcs in a scheme
+	AddToScheme = SchemeBuilder.AddToScheme
+)
+
+func addKnownTypes(scheme *runtime.Scheme) error {
+	if err := scheme.AddIgnoredConversionType(&metav1.TypeMeta{}, &metav1.TypeMeta{}); err != nil {
+		return err
+	}
+	scheme.AddKnownTypes(SchemeGroupVersion,
+		&Pod{},
+		&PodList{},
+		&PodStatusResult{},
+	   。。。
+	)
+
+	return nil
+}
+```
+
+<br>
+
+##### 2.1.3 每种资源的kind，resource是如何转换的
+
+在register.go函数中注册了资源。而K8S中的每种资源都必须有apiVersion:和Kind字段。所以只要注册一种资源就有了GVK在scheme中
+
+```
+pkg/apis/apps/register.go
+// Adds the list of known types to the given scheme.
+func addKnownTypes(scheme *runtime.Scheme) error {
+	// TODO this will get cleaned up with the scheme types are fixed
+	scheme.AddKnownTypes(SchemeGroupVersion,
+		&DaemonSet{},
+		&DaemonSetList{},
+		&Deployment{},
+		&DeploymentList{},
+		&DeploymentRollback{},
+		&autoscaling.Scale{},
+		&StatefulSet{},
+		&StatefulSetList{},
+		&ControllerRevision{},
+		&ControllerRevisionList{},
+		&ReplicaSet{},
+		&ReplicaSetList{},
+	)
+	return nil
+}
+
+// AddKnownTypes registers all types passed in 'types' as being members of version 'version'.
+// All objects passed to types should be pointers to structs. The name that go reports for
+// the struct becomes the "kind" field when encoding. Version may not be empty - use the
+// APIVersionInternal constant if you have a type that does not have a formal version.
+func (s *Scheme) AddKnownTypes(gv schema.GroupVersion, types ...Object) {
+	s.addObservedVersion(gv)
+	for _, obj := range types {
+		t := reflect.TypeOf(obj)
+		if t.Kind() != reflect.Ptr {
+			panic("All types must be pointers to structs.")
+		}
+		t = t.Elem()
+		s.AddKnownTypeWithName(gv.WithKind(t.Name()), obj)
+	}
+}
+```
+
+schme只要有gvk就行了，因为gvk->gvr的转换很简单，知道了kind,就知道了resource。resource就行kind的小写，单数和复数形式。
+
+restmapper中定义了转换方法。
+
+staging/src/k8s.io/apimachinery/pkg/api/meta/restmapper.go
+
+```
+// ResourceSingularizer implements RESTMapper
+// It converts a resource name from plural to singular (e.g., from pods to pod)
+func (m *DefaultRESTMapper) ResourceSingularizer(resourceType string) (string, error) {
+	partialResource := schema.GroupVersionResource{Resource: resourceType}
+	resources, err := m.ResourcesFor(partialResource)
+	if err != nil {
+		return resourceType, err
+	}
+
+	singular := schema.GroupVersionResource{}
+	for _, curr := range resources {
+		currSingular, ok := m.pluralToSingular[curr]
+		if !ok {
+			continue
+		}
+		if singular.Empty() {
+			singular = currSingular
+			continue
+		}
+
+		if currSingular.Resource != singular.Resource {
+			return resourceType, fmt.Errorf("multiple possible singular resources (%v) found for %v", resources, resourceType)
+		}
+	}
+
+	if singular.Empty() {
+		return resourceType, fmt.Errorf("no singular of resource %v has been defined", resourceType)
+	}
+
+	return singular.Resource, nil
+}
+```
 
 #### 2.2 内部版本和外部版本的转换
 
@@ -376,12 +554,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	....
 }
 ```
-
-
-
-
-
-
 
 <br>
 
