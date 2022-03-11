@@ -1,5 +1,4 @@
 Table of Contents
-=================
 
   * [1. 概要](#1-概要)
   * [2. kubelet 的主要功能](#2-kubelet-的主要功能)
@@ -16,23 +15,22 @@ kubelet 通过各种机制（主要通过 apiserver ）获取一组 PodSpec 并�
 
 <br>
 
-### 2. kubelet 的主要功能
+### 2. kubelet 功能介绍
 
 #### 2.1 kubelet 默认监听四个端口，分别为 10250 、10255、10248、4194。
 
 - 10250 –port：kubelet服务监听的端口，api会检测他是否存活。
 - 10248 –healthz-port：健康检查服务的端口。
 - 10255 –read-only-port：只读端口，可以不用验证和授权机制，直接访问。
-- 4194 –cadvisor-port：当前节点cadvisor运行的端口。
 
 <br>
 
 **10250（kubelet API）**：kubelet server 与 apiserver 通信的端口，定期请求 apiserver 获取自己所应当处理的任务，通过该端口可以访问获取 node 资源以及状态。比如：
 
-**注意：** 在kamster集群上，或者其他dnode上执行也是可以访问的。` curl -k https://10.248.34.20:10250/stats/summary`
+**注意：** 在kamster集群上，或者其他dnode上执行也是可以访问的。` curl -k https://127.0.0.1:10250/stats/summary`
 
 ```
-root@node:home/zoux# curl -k https://10.248.34.20:10250/stats/summary
+root@node:home/zoux# curl -k https://127.0.0.1:10250/stats/summary
 {
  "node": {
   "nodeName": "10.248.34.20",
@@ -74,7 +72,11 @@ root@node:home/zoux# curl -k https://10.248.34.20:10250/stats/summary
   }
 ```
 
+cAdvisor 监听
 
+```
+  curl -k https://127.0.0.1:10250/metrics/cadvisor
+```
 
 - 10248（健康检查端口）：通过访问该端口可以判断 kubelet 是否正常工作, 通过 kubelet 的启动参数 `--healthz-port` 和 `--healthz-bind-address` 来指定监听的地址和端口。
 
@@ -83,20 +85,13 @@ root@node:home/zoux# curl -k https://10.248.34.20:10250/stats/summary
   ok
   ```
 
-- 4194（cAdvisor 监听）：kublet 通过该端口可以获取到该节点的环境信息以及 node 上运行的容器状态等内容，访问 [http://localhost:4194](http://localhost:4194/) 可以看到 cAdvisor 的管理界面,通过 kubelet 的启动参数 `--cadvisor-port` 可以指定启动的端口。
-
-```
-  $ h  http://127.0.0.1:4194/metrics
-```
-
 - 10255 （readonly API）：提供了 pod 和 node 的信息，接口以只读形式暴露出去，访问该端口不需要认证和鉴权。
 
   ```
-  root@k8s-node:~# curl  http://192.168.0.5:10255/pods
-  
-  {"kind":"PodList","apiVersion":"v1","metadata":{},"items":[{"metadata":{"name":"test-pod2","namespace":"default","selfLink":"/api/v1/namespaces/default/pods/test-pod2","uid":"66bf2e59-21ad-405d-b519-ae661499db41","resourceVersion":"7944923","creationTimestamp":"2021-07-13T13:24:04Z","annotations":{"kubernetes.io/config.seen":"2021-07-13T21:24:04.092419819+08:00","kubernetes.io/config.source":"api","v2-subnet":"4be28cdc-a3d7-40c2-8360-eba9a37671f8","v2-tenant":"995e52b6c2d544ad904524ba5cd98fb1","v2-vpc":"d3f82f6a-cfff-4996-a3bf-
+  root@k8s-node:~# curl  http://127.0.0.1:10255/pods
+  {"kind":"PodList","apiVersion":"v1","metadata":{},"items":[{"metadata":{"name":"kube-flannel-ds-97qn4","generateName":"kube-flannel-ds-","namespace":"kube-system","selfLink":"/api/v1/namespaces/kube-s]
   ....
-  }
+  343294ac385c400b076a0d0c62979909cede65e90b2a0d8615ddba36c19cd"}},"ready":true,"restartCount":10,"image":"quay.io/coreos/flannel:v0.15.1","imageID":"docker-pullable://quay.io/coreos/flannel@sha256:9a296fbb67790659adc3701e287adde3c59803b7fcefe354f1fc482840cdb3d9","containerID":"docker://8c397ea4bc0ab5f8b68255be78593bb5b05b73174ed858848576ef0ce8702292","started":true}],"qosClass":"Burstable"}}]}
   ```
 
 **注意：**
