@@ -33,7 +33,7 @@ pleg.Start每隔1秒，运行以此relist函数，relist的逻辑如下：
 2. 通过runtimeApi获取所有的pod，包括exit的Pod
 3. 更新pods container状态,以及记录pod数量等metrics
 4. 和旧的Pod进行对比，podRecord结构体保存了旧的，和当前pod的信息，可以理解为和1s前的所有pods进行对比。对比完产生event，保存在一个map中。这里主要产生的事件为：ContainerStarted，ContainerDie, ContainerRemoved, ContainerChanged等等
-5. 如果event和Pod有绑定，并且kubelet开启了cache缓存pod信息，根据最新的信息同步缓存
+5. 如果event和Pod有绑定，并且kubelet开启了cache缓存pod信息，根据最新的信息同步缓存。注意，这里updateCache可能会删除cache。当pod创建是，cache保存这个Pod数据，当pod所有容器died的时候，cache删除这个Pod信息。 后面判断pod是否可能被删除的时候，会判断cacha是否有这个数据。
 6. 将新的record赋值为旧的，为下一轮做准备，然后依次处理event，逻辑为：不是ContainerChanged状态的event都发送到eventChannel中去
 7. 更新缓存，如果有更新失败的，记录到needsReinspection，表示下一次还需要重试
 
