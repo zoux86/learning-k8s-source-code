@@ -1,17 +1,18 @@
-Table of Contents
-=================
-
-  * [1. 资源注册](#1-资源注册)
-  * [2. Cobra命令行参数解析](#2-cobra命令行参数解析)
-     * [2.1.  入口函数 main-&gt;NewAPIServerCommand](#21--入口函数-main-newapiservercommand)
-     * [2.2 options.NewServerRunOptions](#22-optionsnewserverrunoptions)
-     * [2.3 cmd.Flags()](#23-cmdflags)
-     * [2.3.1 C.Name](#231-cname)
-     * [2.3.2 NewFlagSet](#232-newflagset)
-     * [2.4 s.Flags()](#24-sflags)
-     * [2.5 command.Execute() 真正的参数解析](#25-commandexecute-真正的参数解析)
-     * [2.6 总结](#26-总结)
-  * [3. 总结](#3-总结)
+* [Table of Contents](#table-of-contents)
+    * [1\. 资源注册](#1-资源注册)
+    * [2\. Cobra命令行参数解析](#2-cobra命令行参数解析)
+      * [2\.1\.  入口函数 main\-&gt;NewAPIServerCommand](#21--入口函数-main-newapiservercommand)
+      * [2\.2 options\.NewServerRunOptions](#22-optionsnewserverrunoptions)
+      * [2\.3 cmd\.Flags()](#23-cmdflags)
+      * [2\.3\.1 C\.Name](#231-cname)
+      * [2\.3\.2 NewFlagSet](#232-newflagset)
+      * [2\.4 s\.Flags()](#24-sflags)
+      * [2\.5 command\.Execute() 真正的参数解析](#25-commandexecute-真正的参数解析)
+      * [2\.6 总结](#26-总结)
+    * [3  RunE](#3--rune)
+      * [3\.1 completedOptions, err := Complete(s)](#31-completedoptions-err--completes)
+      * [3\.2 validate](#32-validate)
+    * [4\. 总结](#4-总结)
 
 **本章重点：**
 
@@ -33,11 +34,9 @@ Table of Contents
 
 （6）创建AggregatorServer。
 
-（7）创建GenericAPIServer。
+（7）启动HTTP服务。
 
-（8）启动HTTP服务。
-
-（9）启动HTTPS服务。
+（8）启动HTTPS服务
 
 
 
@@ -953,6 +952,12 @@ func (c *Command) execute(a []string) (err error) {
 }
 ```
 
+
+
+
+
+
+
 #### 2.6 总结
 
 （1）这里主要就是利用corba工具，进行初始化。options.NewServerRunOptions 函数将 corba和 kube-apiserver的参数进行了解耦。
@@ -961,27 +966,107 @@ func (c *Command) execute(a []string) (err error) {
 
 <br>
 
-### 3. 总结
+### 3  RunE
 
-kube-apiserver启动过程分为9个步骤。这里先分析到两个
+这个是NewAPIServerCommand中定义的RunE函数。
 
-（1）资源注册。
+```
+RunE: func(cmd *cobra.Command, args []string) error {
+			// 1. 如果监测到输入了 --version，就打印当前的k8s版本信息，然后退出。
+			verflag.PrintAndExitIfRequested()
+			
+			// 2. 打印flags
+			utilflag.PrintFlags(cmd.Flags())
+			
+			// 3. 补全 s的配置，这里是补充默认的配置。（s := options.NewServerRunOptions()），详见1.1
+			// set default options
+			completedOptions, err := Complete(s)
+			if err != nil {
+				return err
+			}
+			
+			// 4. 分组件validate，主要验证每个组件是否缺失一些重要的参数。以及参数是否符合规范等。详见1.2
+			// validate options
+			if errs := completedOptions.Validate(); len(errs) != 0 {
+				return utilerrors.NewAggregate(errs)
+			}
+            
+            // 5. 这里已经获得了所有的配置，并且通过验证，然后真正可以运行 api-server函数。  详见1.3
+			return Run(completedOptions, stopCh)
+		},
+```
 
-（2）Cobra命令行参数解析。
+<br>
 
-（3）创建APIServer通用配置。
+#### 3.1 completedOptions, err := Complete(s)
 
-（4）创建APIExtensionsServer。
+completedOptions 和 s 都是ServerRunOptions。 complete主要是通过默认的配置补全 s。同时还有一些实现一些限制，比如Etcd.StorageConfig.DeserializationCacheSize>=1000。如果用户设置了小于1000的值，这里会自动改为1000。
 
-（5）创建KubeAPIServer。
+```
+if s.Etcd.StorageConfig.DeserializationCacheSize < 1000 {
+			s.Etcd.StorageConfig.DeserializationCacheSize = 1000
+		}
+```
 
-（6）创建AggregatorServer。
+<br>
 
-（7）创建GenericAPIServer。
+#### 3.2 validate
 
-（8）启动HTTP服务。
+分组件validate，主要验证每个组件是否缺失一些重要的参数。以及参数是否符合规范等。
 
-（9）启动HTTPS服务。
+```
+// Validate checks ServerRunOptions and return a slice of found errors.
+func (s *ServerRunOptions) Validate() []error {
+	var errors []error
+	if errs := s.Etcd.Validate(); len(errs) > 0 {
+		errors = append(errors, errs...)
+	}
+	if errs := validateClusterIPFlags(s); len(errs) > 0 {
+		errors = append(errors, errs...)
+	}
+	if errs := validateServiceNodePort(s); len(errs) > 0 {
+		errors = append(errors, errs...)
+	}
+	if errs := s.SecureServing.Validate(); len(errs) > 0 {
+		errors = append(errors, errs...)
+	}
+	if errs := s.Authentication.Validate(); len(errs) > 0 {
+		errors = append(errors, errs...)
+	}
+	if errs := s.Authorization.Validate(); len(errs) > 0 {
+		errors = append(errors, errs...)
+	}
+	if errs := s.Audit.Validate(); len(errs) > 0 {
+		errors = append(errors, errs...)
+	}
+	if errs := s.Admission.Validate(); len(errs) > 0 {
+		errors = append(errors, errs...)
+	}
+	if errs := s.InsecureServing.Validate(); len(errs) > 0 {
+		errors = append(errors, errs...)
+	}
+	if s.MasterCount <= 0 {
+		errors = append(errors, fmt.Errorf("--apiserver-count should be a positive number, but value '%d' provided", s.MasterCount))
+	}
+	if errs := s.APIEnablement.Validate(legacyscheme.Scheme, apiextensionsapiserver.Scheme, aggregatorscheme.Scheme); len(errs) > 0 {
+		errors = append(errors, errs...)
+	}
+
+	return errors
+}
+```
+
+<br>
+
+### 4. 总结
+
+kube-apiserver启动过程分为8个步骤。这里先分析到前两个
+
+（1）资源注册
+
+（2）Cobra命令行参数解析
+
+通过这个分析，了解到了apiserver是如何感知pod，deploy等内置资源的存在
 
 <br>
 

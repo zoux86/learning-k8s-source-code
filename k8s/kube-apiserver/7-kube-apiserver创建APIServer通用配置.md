@@ -1,156 +1,54 @@
-Table of Contents
-=================
-
-  * [1. kube-apiserver代码逻辑](#1-kube-apiserver代码逻辑)
-     * [(1) RunE](#1-rune)
-     * [1.1 completedOptions, err := Complete(s)](#11-completedoptions-err--completes)
-     * [1.2 validate](#12-validate)
-     * [1.3 Run](#13-run)
-        * [1.3.1 CreateServerChain](#131-createserverchain)
-           * [1.3.1.1 函数输入输出](#1311-函数输入输出)
-           * [1.3.1.2 CreateServerChain 主体](#1312-createserverchain-主体)
-           * [1.3.1.3  CreateNodeDialer](#1313--createnodedialer)
-        * [1.3.2 PrepareRun](#132-preparerun)
-        * [1.3.3 Run](#133-run)
-           * [1.3.3.1 NonBlockingRun](#1331-nonblockingrun)
-     * [(2) 总结](#2-总结)
-  * [2. 创建APIServer通用配置](#2-创建apiserver通用配置)
-     * [2.1  genericConfig实例化](#21--genericconfig实例化)
-     * [2.2 OpenAPI/Swagger配置](#22-openapiswagger配置)
-     * [2.3 StorageFactory存储（Etcd）配置](#23-storagefactory存储etcd配置)
-     * [2.4 Authentication认证配置](#24-authentication认证配置)
-     * [2.5 Authorization授权配置](#25-authorization授权配置)
-     * [2.6 Admission准入控制器配置](#26-admission准入控制器配置)
+* [Table of Contents](#table-of-contents)
+    * [1\. 背景介绍](#1-背景介绍)
+      * [1\.1 CreateServerChain](#11-createserverchain)
+        * [1\.1\.1 函数输入输出](#111-函数输入输出)
+        * [1\.1\.2 CreateServerChain 主体](#112-createserverchain-主体)
+        * [1\.1\.3  CreateNodeDialer](#113--createnodedialer)
+      * [1\.2 PrepareRun](#12-preparerun)
+      * [1\.3 Run](#13-run)
+        * [1\.3\.1 NonBlockingRun](#131-nonblockingrun)
+      * [1\.4 总结](#14-总结)
+    * [2\. 创建APIServer通用配置](#2-创建apiserver通用配置)
+      * [2\.1  genericConfig实例化](#21--genericconfig实例化)
+      * [2\.2 OpenAPI/Swagger配置](#22-openapiswagger配置)
+      * [2\.3 StorageFactory存储（Etcd）配置](#23-storagefactory存储etcd配置)
+      * [2\.4 Authentication认证配置](#24-authentication认证配置)
+      * [2\.5 Authorization授权配置](#25-authorization授权配置)
+      * [2\.6 Admission准入控制器配置](#26-admission准入控制器配置)
 
 **本章重点：**
 
-（1）kube-apiserver启动过程中，第三个步骤：资源注册和命令行解析。然后定义通用配置。配置如下：
+介绍kube-apiserver启动过程中第三个步骤-定义通用配置，包含如下配置：
 
 ![image-20210225152550545](../images/apiserver-config-1.png)
 
-### 1. kube-apiserver代码逻辑
+### 1. 背景介绍
 
-接上文分析，这里直接从RunE函数开始分析。这部分主要从代码角度，进行 kube-apiserver的 9个流程分析
+接上文分析，这里直接从Run函数开始分析。这部分主要从代码角度，进行 kube-apiserver第三个流程分析
 
 （1）资源注册。
 
-（2）Cobra命令行参数解析。
+（2）Cobra命令行参数解析
 
-（3）创建APIServer通用配置。
+（3）创建APIServer通用配置
 
-（4）创建APIExtensionsServer。
+（4）创建APIExtensionsServer
 
-（5）创建KubeAPIServer。
+（5）创建KubeAPIServer
 
-（6）创建AggregatorServer。
+（6）创建AggregatorServer
 
-（7）创建GenericAPIServer。
+（7）启动HTTP服务。
 
-（8）启动HTTP服务。
+（8）启动HTTPS服务
 
-（9）启动HTTPS服务。
-
-#### (1) RunE
-
-这个是NewAPIServerCommand中定义的RunE函数。
-
-```
-RunE: func(cmd *cobra.Command, args []string) error {
-			// 1. 如果监测到输入了 --version，就打印当前的k8s版本信息，然后退出。
-			verflag.PrintAndExitIfRequested()
-			
-			// 2. 打印flags
-			utilflag.PrintFlags(cmd.Flags())
-			
-			// 3. 补全 s的配置，这里是补充默认的配置。（s := options.NewServerRunOptions()），详见1.1
-			// set default options
-			completedOptions, err := Complete(s)
-			if err != nil {
-				return err
-			}
-			
-			// 4. 分组件validate，主要验证每个组件是否缺失一些重要的参数。以及参数是否符合规范等。详见1.2
-			// validate options
-			if errs := completedOptions.Validate(); len(errs) != 0 {
-				return utilerrors.NewAggregate(errs)
-			}
-            
-            // 5. 这里已经获得了所有的配置，并且通过验证，然后真正可以运行 api-server函数。  详见1.3
-			return Run(completedOptions, stopCh)
-		},
-```
-
-<br>
-
-#### 1.1 completedOptions, err := Complete(s)
-
-completedOptions 和 s 都是ServerRunOptions。 complete主要是通过默认的配置补全 s。同时还有一些实现一些限制，比如Etcd.StorageConfig.DeserializationCacheSize>=1000。如果用户设置了小于1000的值，这里会自动改为1000。
-
-```
-if s.Etcd.StorageConfig.DeserializationCacheSize < 1000 {
-			s.Etcd.StorageConfig.DeserializationCacheSize = 1000
-		}
-```
-
-<br>
-
-#### 1.2 validate
-
-分组件validate，主要验证每个组件是否缺失一些重要的参数。以及参数是否符合规范等。
-
-```
-// Validate checks ServerRunOptions and return a slice of found errors.
-func (s *ServerRunOptions) Validate() []error {
-	var errors []error
-	if errs := s.Etcd.Validate(); len(errs) > 0 {
-		errors = append(errors, errs...)
-	}
-	if errs := validateClusterIPFlags(s); len(errs) > 0 {
-		errors = append(errors, errs...)
-	}
-	if errs := validateServiceNodePort(s); len(errs) > 0 {
-		errors = append(errors, errs...)
-	}
-	if errs := s.SecureServing.Validate(); len(errs) > 0 {
-		errors = append(errors, errs...)
-	}
-	if errs := s.Authentication.Validate(); len(errs) > 0 {
-		errors = append(errors, errs...)
-	}
-	if errs := s.Authorization.Validate(); len(errs) > 0 {
-		errors = append(errors, errs...)
-	}
-	if errs := s.Audit.Validate(); len(errs) > 0 {
-		errors = append(errors, errs...)
-	}
-	if errs := s.Admission.Validate(); len(errs) > 0 {
-		errors = append(errors, errs...)
-	}
-	if errs := s.InsecureServing.Validate(); len(errs) > 0 {
-		errors = append(errors, errs...)
-	}
-	if s.MasterCount <= 0 {
-		errors = append(errors, fmt.Errorf("--apiserver-count should be a positive number, but value '%d' provided", s.MasterCount))
-	}
-	if errs := s.APIEnablement.Validate(legacyscheme.Scheme, apiextensionsapiserver.Scheme, aggregatorscheme.Scheme); len(errs) > 0 {
-		errors = append(errors, errs...)
-	}
-
-	return errors
-}
-```
-
-<br>
-
-#### 1.3 Run
-
-这里可以分为三个部分：
+**Run**函数可以分为三个部分：
 
 （1）CreateServerChain
 
 （2）PrepareRun
 
-（3）Run  ()
+（3）Run 
 
 ```
 // Run runs the specified APIServer.  This should never exit.
@@ -167,11 +65,13 @@ func Run(completeOptions completedServerRunOptions, stopCh <-chan struct{}) erro
 }
 ```
 
+本节首先对apiserver的整体流程进行介绍
+
 <br>
 
-##### 1.3.1 CreateServerChain
+#### 1.1 CreateServerChain
 
-###### 1.3.1.1 函数输入输出
+##### 1.1.1 函数输入输出
 
 **输入：**   completedOptions 完整的配置；  stopCh，退出信号，`stopCh` 最初是 `NewAPIServerCommand()` 中创建的：
 
@@ -293,7 +193,7 @@ type GenericAPIServer struct {
 
 <br>
 
-###### 1.3.1.2 CreateServerChain 主体
+##### 1.1.2 CreateServerChain 主体
 
 ```go
 // CreateServerChain creates the apiservers connected via delegation.
@@ -372,7 +272,7 @@ createServerChain的主要功能就是定义  各种URI（路径）。这里使�
 
 <br>
 
-###### 1.3.1.3  CreateNodeDialer
+##### 1.1.3  CreateNodeDialer
 
 函数定义如下：
 
@@ -454,7 +354,7 @@ func (c *SSHTunneler) Run(getAddresses AddressFunc) {
 
 <br>
 
-##### 1.3.2 PrepareRun
+#### 1.2 PrepareRun
 
 定义一些  服务器端的接口，和处理函数。从名字也可以看出来就是补全一下接口用的。
 
@@ -523,7 +423,7 @@ func InstallHandler(mux mux, checks ...HealthzChecker) {
 
 <br>
 
-##### 1.3.3 Run
+#### 1.3 Run
 
 这里看起来和1.3.1有关联。先分析1.3.1。
 
@@ -552,7 +452,7 @@ func (s preparedGenericAPIServer) Run(stopCh <-chan struct{}) error {
 
 <br>
 
-###### 1.3.3.1 NonBlockingRun
+##### 1.3.1 NonBlockingRun
 
 `s.NonBlockingRun` 的主要逻辑为：
 
@@ -615,11 +515,13 @@ func (s preparedGenericAPIServer) NonBlockingRun(stopCh <-chan struct{}) error {
 
 <br>
 
-#### (2) 总结
+#### 1.4 总结
 
 从代码结流程看，在命令行初始化之后。主要运行了  CreateServerChain这个关键函数。这个就是定义了链条，可以认为是定义了   url 和 处理函数。
 
 然后 PrePareRun, Run都是运行服务。
+
+本节要介绍的创建APIServer通用配置，就是CreateServerChain的第一个操作
 
 <br>
 
@@ -748,12 +650,34 @@ func buildGenericConfig(
 
 #### 2.1  genericConfig实例化
 
-CreateServerChain  -> CreateKubeAPIServerConfig -> buildGenericConfig
+CreateServerChain  -> CreateKubeAPIServerConfig 
 
-genericConfig.MergedResourceConfig用于设置启用/禁用GV（资源组、资源版本）及其Resource （资源）。如果未在命令行参数中指定启用/禁用的GV，则通过master.DefaultAPIResourceConfigSource启用默认设置的GV及其资源。master.DefaultAPIResourceConfigSource将启用资源版本为Stable和Beta的资源，默认不启用Alpha资源版本的资源。通过EnableVersions函数启用指定资源，而通过DisableVersions函数禁用指定资源，代码示例如下：
+buildGenericConfig 生成以下对象
+
+* genericConfig： 生成通用参数, 用于决定k8s开启哪些资源
+
+* versionedInformers:   client-go的sharedInformerFactory 
+
+* insecureServingInfo: 用于开启http服务，高版本这个已经不支持
+
+* serviceResolver:  内部服务的dns解析器
+
+* pluginInitializers：admission-control参数下面指定的plugin
+
+ --admission-control=NamespaceLifecycle,NamespaceExists,LimitRanger,ServiceAccount,ResourceQuota,DefaultStorageClass,MutatingAdmissionWebhook,ValidatingAdmissionWebhook,EventRateLimit
+
+* admissionPostStartHook 
+
+  MutatingAdmissionWebhook,ValidatingAdmissionWebhook的PostStartHook 
+
+* storageFactory:  生成etcd storageFactory
+
+<br>
+
+其中genericConfig.MergedResourceConfig用于设置启用/禁用GV（资源组、资源版本）及其Resource （资源）。如果未在命令行参数中指定启用/禁用的GV，则通过master.DefaultAPIResourceConfigSource启用默认设置的GV及其资源。master.DefaultAPIResourceConfigSource将启用资源版本为Stable和Beta的资源，默认不启用Alpha资源版本的资源。通过EnableVersions函数启用指定资源，而通过DisableVersions函数禁用指定资源，代码示例如下：
 
 ```go
-// 1. 生成 genericConfig,  用于决定k8s开启哪些资源
+  // 1. 生成 genericConfig,  用于决定k8s开启哪些资源
 	genericConfig = genericapiserver.NewConfig(legacyscheme.Codecs)
 	genericConfig.MergedResourceConfig = master.DefaultAPIResourceConfigSource()
 
@@ -805,6 +729,20 @@ func DefaultAPIResourceConfigSource() *serverstorage.ResourceConfig {
 
 <br>
 
+apiserver 通过  --runtime-config 指定支持哪些内置资源。 一般都是api/all=true
+
+```
+    --runtime-config mapStringString
+                A set of key=value pairs that enable or disable built-in APIs. Supported options are:
+                v1=true|false for the core API group
+                <group>/<version>=true|false for a specific API group and version (e.g. apps/v1=true)
+                api/all=true|false controls all API versions
+                api/ga=true|false controls all API versions of the form v[0-9]+
+                api/beta=true|false controls all API versions of the form v[0-9]+beta[0-9]+
+                api/alpha=true|false controls all API versions of the form v[0-9]+alpha[0-9]+
+                api/legacy is deprecated, and will be removed in a future version
+```
+
 #### 2.2 OpenAPI/Swagger配置
 
 ```go
@@ -843,6 +781,10 @@ func DefaultOpenAPIConfig(getDefinitions openapicommon.GetOpenAPIDefinitions, de
 
 <br>
 
+这里需要注意的是，从v1.14版本开始，官方已经抛弃了swagger接口，使用的是openapi规范，暴露的是 /openapi/v2。直接可以通过
+
+http://master-ip:apiserver-port/openapi/v2 查看
+
 #### 2.3 StorageFactory存储（Etcd）配置
 
 kube-apiserver组件使用Etcd作为Kubernetes系统集群的存储，系统中所有资源信息、集群状态、配置信息等都存储于Etcd中，代码示例如下：
@@ -857,9 +799,19 @@ kube-apiserver组件使用Etcd作为Kubernetes系统集群的存储，系统中�
 		return
 	}
 	storageFactory, lastErr = completedStorageFactoryConfig.New()
+
+
+// Complete completes the StorageFactoryConfig with provided etcdOptions returning completedStorageFactoryConfig.
+func (c *StorageFactoryConfig) Complete(etcdOptions *serveroptions.EtcdOptions) (*completedStorageFactoryConfig, error) {
+	c.StorageConfig = etcdOptions.StorageConfig
+	c.DefaultStorageMediaType = etcdOptions.DefaultStorageMediaType
+	c.EtcdServersOverrides = etcdOptions.EtcdServersOverrides
+	c.EncryptionProviderConfigFilepath = etcdOptions.EncryptionProviderConfigFilepath
+	return &completedStorageFactoryConfig{c}, nil
+}
 ```
 
-kubeapiserver.NewStorageFactoryConfig函数实例化了storageFactoryConfig对象，该对象定义了kube-apiserver与Etcd的交互方式，例如Etcd认证、Etcd地址、存储前缀等。另外，该对象也定义了资源存储方式，例如资源信息、资源编码类型、资源状态等。
+kubeapiserver.NewStorageFactoryConfig函数实例化了storageFactoryConfig对象，该对象定义了kube-apiserver与Etcd的交互方式，例如Etcd认证、Etcd地址（--etcd-servers）、存储前缀（ --etcd-prefix参数）等。另外，该对象也定义了资源存储方式，例如资源信息、资源编码类型、资源状态等。
 
 <br>
 
@@ -912,8 +864,81 @@ authenticatorConfig.New函数在实例化认证器的过程中，会根据认证
 authorizationConfig.New() = union.New(authorizers...), union.NewRuleResolvers(ruleResolvers...)
 ```
 
-```
 authenticators中存放的是已启用的认证器列表。union.New函数将authenticators合并成一个authenticator认证器，实际上将认证器列表存放在union结构的Handlers []authenticator.Request对象中。当客户端请求到达kube-apiserver时，kube-apiserver会遍历认证器列表，尝试执行每个认证器，当有一个认证器返回true时，则认证成功。
+
+<br>
+
+Authentication可以通过下面的参数配置，开启上诉的认证。例如：--authentication-token-webhook-config-file 指定认证的webhook配置。一般是和公司的权限认证相关。
+
+```
+Authentication flags:
+
+      --anonymous-auth
+                Enables anonymous requests to the secure port of the API server. Requests that are not rejected by another authentication method are treated as anonymous
+                requests. Anonymous requests have a username of system:anonymous, and a group name of system:unauthenticated. (default true)
+      --api-audiences strings
+                Identifiers of the API. The service account token authenticator will validate that tokens used against the API are bound to at least one of these audiences.
+                If the --service-account-issuer flag is configured and this flag is not, this field defaults to a single element list containing the issuer URL .
+      --authentication-token-webhook-cache-ttl duration
+                The duration to cache responses from the webhook token authenticator. (default 2m0s)
+      --authentication-token-webhook-config-file string
+                File with webhook configuration for token authentication in kubeconfig format. The API server will query the remote service to determine authentication for
+                bearer tokens.
+      --authentication-token-webhook-version string
+                The API version of the authentication.k8s.io TokenReview to send to and expect from the webhook. (default "v1beta1")
+      --client-ca-file string
+                If set, any request presenting a client certificate signed by one of the authorities in the client-ca-file is authenticated with an identity corresponding
+                to the CommonName of the client certificate.
+      --enable-bootstrap-token-auth
+                Enable to allow secrets of type 'bootstrap.kubernetes.io/token' in the 'kube-system' namespace to be used for TLS bootstrapping authentication.
+      --oidc-ca-file string
+                If set, the OpenID server's certificate will be verified by one of the authorities in the oidc-ca-file, otherwise the host's root CA set will be used.
+      --oidc-client-id string
+                The client ID for the OpenID Connect client, must be set if oidc-issuer-url is set.
+      --oidc-groups-claim string
+                If provided, the name of a custom OpenID Connect claim for specifying user groups. The claim value is expected to be a string or array of strings. This flag
+                is experimental, please see the authentication documentation for further details.
+      --oidc-groups-prefix string
+                If provided, all groups will be prefixed with this value to prevent conflicts with other authentication strategies.
+      --oidc-issuer-url string
+                The URL of the OpenID issuer, only HTTPS scheme will be accepted. If set, it will be used to verify the OIDC JSON Web Token (JWT).
+      --oidc-required-claim mapStringString
+                A key=value pair that describes a required claim in the ID Token. If set, the claim is verified to be present in the ID Token with a matching value. Repeat
+                this flag to specify multiple claims.
+      --oidc-signing-algs strings
+                Comma-separated list of allowed JOSE asymmetric signing algorithms. JWTs with a 'alg' header value not in this list will be rejected. Values are defined by
+                RFC 7518 https://tools.ietf.org/html/rfc7518#section-3.1. (default [RS256])
+      --oidc-username-claim string
+                The OpenID claim to use as the user name. Note that claims other than the default ('sub') is not guaranteed to be unique and immutable. This flag is
+                experimental, please see the authentication documentation for further details. (default "sub")
+      --oidc-username-prefix string
+                If provided, all usernames will be prefixed with this value. If not provided, username claims other than 'email' are prefixed by the issuer URL to avoid
+                clashes. To skip any prefixing, provide the value '-'.
+      --requestheader-allowed-names strings
+                List of client certificate common names to allow to provide usernames in headers specified by --requestheader-username-headers. If empty, any client
+                certificate validated by the authorities in --requestheader-client-ca-file is allowed.
+      --requestheader-client-ca-file string
+                Root certificate bundle to use to verify client certificates on incoming requests before trusting usernames in headers specified by
+                --requestheader-username-headers. WARNING: generally do not depend on authorization being already done for incoming requests.
+      --requestheader-extra-headers-prefix strings
+                List of request header prefixes to inspect. X-Remote-Extra- is suggested.
+      --requestheader-group-headers strings
+                List of request headers to inspect for groups. X-Remote-Group is suggested.
+      --requestheader-username-headers strings
+                List of request headers to inspect for usernames. X-Remote-User is common.
+      --service-account-issuer string
+                Identifier of the service account token issuer. The issuer will assert this identifier in "iss" claim of issued tokens. This value is a string or URI.
+      --service-account-key-file stringArray
+                File containing PEM-encoded x509 RSA or ECDSA private or public keys, used to verify ServiceAccount tokens. The specified file can contain multiple keys,
+                and the flag can be specified multiple times with different files. If unspecified, --tls-private-key-file is used. Must be specified when
+                --service-account-signing-key is provided
+      --service-account-lookup
+                If true, validate ServiceAccount tokens exist in etcd as part of authentication. (default true)
+      --service-account-max-token-expiration duration
+                The maximum validity duration of a token created by the service account token issuer. If an otherwise valid TokenRequest with a validity duration larger
+                than this value is requested, a token will be issued with a validity duration of this value.
+      --token-auth-file string
+                If set, the file that will be used to secure the secure port of the API server via token authentication.
 ```
 
 <br>
@@ -957,6 +982,17 @@ authorizers中存放的是已启用的授权器列表，ruleResolvers中存放�
 []authorizer.Authorizer和[]authorizer.RuleResolver对象中。当客户端请求到达kube-apiserver时，kube-apiserver会遍历授权器列表，并按照顺序执行授权
 
 器，排在前面的授权器具有更高的优先级（允许或拒绝请求）。客户端发起一个请求，在经过授权阶段时，只要有一个授权器通过，则授权成功。
+
+<br>
+
+**Kube-apiserver**通过authorization-mode指定支持哪几种授权模式。
+
+**注意，这个是访问安全端口时候用到的，如果访问的是非安全端口，是不同通过授权验证的！！！**
+
+```
+--authorization-mode strings
+                Ordered list of plug-ins to do authorization on secure port. Comma-delimited list of: AlwaysAllow,AlwaysDeny,ABAC,Webhook,RBAC,Node. (default [AlwaysAllow])
+```
 
 <br>
 
@@ -1077,6 +1113,14 @@ func Register(plugins *admission.Plugins) {
 		return newImagePolicyWebhook, nil
 	})
 }
+```
+
+<br>
+
+这个是通过--admission-control指定，例如：
+
+```
+--admission-control=NamespaceLifecycle,NamespaceExists,LimitRanger,ServiceAccount,ResourceQuota,DefaultStorageClass,Priority,MutatingAdmissionWebhook,ValidatingAdmissionWebhook
 ```
 
 <br>

@@ -1,23 +1,21 @@
-Table of Contents
-=================
-
-  * [1. kube-apiserver组件整体功能](#1-kube-apiserver组件整体功能)
-  * [2. bootstrap-controller](#2-bootstrap-controller)
-     * [2.1 NewBootstrapController](#21-newbootstrapcontroller)
-     * [2.2 BootstrapController.PostStartHook](#22-bootstrapcontrollerpoststarthook)
-     * [2.3 四个函数](#23-四个函数)
-        * [1-RunKubernetesNamespaces](#1-runkubernetesnamespaces)
-        * [2- RunKubernetesService](#2--runkubernetesservice)
-        * [3- repairClusterIPs.RunUntil](#3--repairclusteripsrununtil)
-        * [4-repairNodePorts.RunUntil](#4-repairnodeportsrununtil)
-     * [2.4 总结](#24-总结)
-  * [3. KubeAPIServer](#3-kubeapiserver)
-  * [4.aggregatorServer](#4aggregatorserver)
-  * [5. apiExtensionsServer](#5-apiextensionsserver)
-  * [6.总结](#6总结)
-     * [6.1 kubeAPIServer, apiExtensionsServer, aggregatorServer 总结](#61-kubeapiserver-apiextensionsserver-aggregatorserver-总结)
-     * [6.2 bootstrap-controller](#62-bootstrap-controller)
-  * [7. 参考文档](#7-参考文档)
+* [Table of Contents](#table-of-contents)
+    * [1\. kube\-apiserver组件整体功能](#1-kube-apiserver组件整体功能)
+    * [2\. bootstrap\-controller](#2-bootstrap-controller)
+      * [2\.1 NewBootstrapController](#21-newbootstrapcontroller)
+      * [2\.2 BootstrapController\.PostStartHook](#22-bootstrapcontrollerpoststarthook)
+      * [2\.3 四个函数](#23-四个函数)
+        * [1\-RunKubernetesNamespaces](#1-runkubernetesnamespaces)
+        * [2\- RunKubernetesService](#2--runkubernetesservice)
+        * [3\- repairClusterIPs\.RunUntil](#3--repairclusteripsrununtil)
+        * [4\-repairNodePorts\.RunUntil](#4-repairnodeportsrununtil)
+      * [2\.4 总结](#24-总结)
+    * [3\. KubeAPIServer](#3-kubeapiserver)
+    * [4\.aggregatorServer](#4aggregatorserver)
+    * [5\. apiExtensionsServer](#5-apiextensionsserver)
+    * [6\.总结](#6总结)
+      * [6\.1 kubeAPIServer, apiExtensionsServer, aggregatorServer 总结](#61-kubeapiserver-apiextensionsserver-aggregatorserver-总结)
+      * [6\.2 bootstrap\-controller](#62-bootstrap-controller)
+    * [7\. 参考文档](#7-参考文档)
 
 **本章重点：**
 
@@ -1749,7 +1747,7 @@ kind: APIService
 
 (1) bootstrap-controller主要用于创建以及维护内部kubernetes apiserver service
 
-(2) 管理Service ClusterIP 
+(2) 维护Service ClusterIP ，Nodeport
 
 ###  7. 参考文档
 
