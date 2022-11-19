@@ -625,6 +625,8 @@ func (s *Scheme) AddKnownTypes(gv schema.GroupVersion, types ...Object) {
 }
 ```
 
+为了更深刻的展示scheme的作用，我写了一个小的demo，展示如何利用scheme 进行deploy v1beta1-> v1版本，以及hpa v1beta2->v1版本的转换。详情：https://github.com/zoux86/k8sConvert
+
 <br>
 
 ### 4. 总结
